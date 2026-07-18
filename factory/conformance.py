@@ -129,6 +129,34 @@ def load(path: str | Path) -> dict[str, Any]:
     return manifest
 
 
+def unit_conformance_path(unit_root: str | Path) -> Path:
+    """Path to the conformance manifest an exported harness unit carries.
+
+    Self-certifying harnesses embed the block in harness.json and ship the
+    task templates under contracts_dir; PAO places both under
+    <unit>/pao-lwar/conformance/. Returning the on-disk conformance.json keeps
+    template resolution (template_path) working unchanged.
+    """
+    return Path(unit_root).resolve() / "pao-lwar" / "conformance" / "conformance.json"
+
+
+def load_from_unit(unit_root: str | Path) -> tuple[dict[str, Any], Path]:
+    """Load a validated conformance manifest from an exported unit root.
+
+    Prefers the embedded harness.json block (the authoritative self-certifying
+    copy) but anchors template resolution to the shipped conformance dir, so
+    the returned path drives template_path() correctly.
+    """
+    unit_root = Path(unit_root).resolve()
+    harness_path = unit_root / "harness.json"
+    embedded = load_json(harness_path).get("conformance") if harness_path.is_file() else None
+    manifest_path = unit_conformance_path(unit_root)
+    if embedded:
+        validate(embedded)
+        return embedded, manifest_path
+    return load(manifest_path), manifest_path
+
+
 def template_path(manifest_path: str | Path, probe: dict[str, Any]) -> Path:
     """Resolve a probe's task_template relative to the manifest's directory."""
     return (Path(manifest_path).resolve().parent / probe["task_template"]).resolve()

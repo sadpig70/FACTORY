@@ -45,10 +45,14 @@ optimizer/fleet, cold spawn, bias measurement (schema-reserved only).
    invalidated; emits a BindingInstruction JSON (contract path, bus root,
    register args) — bind_state out of MVP.
 6. **Probe pack location (MVP compromise, recorded)**: self-certifying says the
-   harness owns its probes; to avoid cross-repo churn the pao-lwar probe pack
-   lives here under `probes/pao-lwar/` with a `conformance.json` the verifier
-   accepts via `--conformance` when the unit manifest's block is empty.
-   Migration of the pack into the PAO unit (via HUX export) is an open TODO.
+   harness owns its probes. RESOLVED 2026-07-19: the pao-lwar pack now lives in
+   the PAO repo at `PAO_skills/pao-lwar/conformance/` (authored content). HUX
+   `export_pao` embeds `conformance.json` into the exported unit's
+   `harness.json.conformance` and ships the templates under
+   `pao-lwar/conformance/`; the verifier loads it via
+   `conformance.load_from_unit(<unit root>)` (embedded block authoritative,
+   templates resolved from the shipped dir). `probes/pao-lwar/` here remains a
+   dev fixture for tests; PAO is the source of truth.
 7. **Model identity is operator-attested** (`model_attested: true`); the ledger
    never claims measured model identity in MVP.
 

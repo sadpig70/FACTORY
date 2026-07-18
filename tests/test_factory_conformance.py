@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -100,3 +101,47 @@ class ConformanceInvalidTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnitConformanceLoadTests(unittest.TestCase):
+    """load_from_unit reads the self-certifying block an exported unit carries."""
+
+    def _make_unit(self, tmp):
+        unit = Path(tmp) / "unit"
+        conf_dir = unit / "pao-lwar" / "conformance"
+        conf_dir.mkdir(parents=True)
+        manifest = {
+            "schema_version": "factory.conformance.v1",
+            "harness": {"name": "pao-lwar", "version": "0.6.1",
+                        "contract": "lwar-runtime.v2-adp"},
+            "probes": [{
+                "probe_id": "content_exactness",
+                "task_template": "content_exactness.task.json",
+                "pass_criteria": {"result_status": "succeeded"},
+                "timeout_s": 120,
+            }],
+        }
+        (conf_dir / "conformance.json").write_text(
+            json.dumps(manifest), encoding="utf-8")
+        (conf_dir / "content_exactness.task.json").write_text(
+            json.dumps({"goal": "x"}), encoding="utf-8")
+        (unit / "harness.json").write_text(
+            json.dumps({"name": "pao", "conformance": manifest}), encoding="utf-8")
+        return unit, manifest
+
+    def test_load_from_unit_prefers_embedded_block(self):
+        with TemporaryDirectory() as tmp:
+            unit, manifest = self._make_unit(tmp)
+            loaded, manifest_path = conformance.load_from_unit(unit)
+            self.assertEqual(loaded, manifest)
+            # template resolution anchors to the shipped conformance dir
+            tp = conformance.template_path(manifest_path, manifest["probes"][0])
+            self.assertTrue(tp.is_file())
+
+    def test_load_from_unit_falls_back_to_disk_when_block_empty(self):
+        with TemporaryDirectory() as tmp:
+            unit, manifest = self._make_unit(tmp)
+            (unit / "harness.json").write_text(
+                json.dumps({"name": "pao", "conformance": {}}), encoding="utf-8")
+            loaded, _ = conformance.load_from_unit(unit)
+            self.assertEqual(loaded["probes"][0]["probe_id"], "content_exactness")
