@@ -1,9 +1,15 @@
 {
   "schema_version": "factory.conformance.v1",
-  "harness": "pao-lwar",
+  "harness": {
+    "name": "pao-lwar",
+    "version": "0.6.1",
+    "contract": "lwar-runtime.v2-adp"
+  },
   "axis": "model_adherence",
   "bootstrap": {
-    "steps": ["registration"],
+    "steps": [
+      "registration"
+    ],
     "judged_from": "registry_state"
   },
   "probes": [
@@ -29,7 +35,9 @@
       "timeout_s": 90,
       "pass_criteria": {
         "result_status": "failed",
-        "artifact_absent": ["summary.txt"]
+        "artifact_absent": [
+          "summary.txt"
+        ]
       }
     },
     {
@@ -63,7 +71,9 @@
       "timeout_s": 150,
       "pass_criteria": {
         "result_status": "cancelled",
-        "artifact_absent": ["done.txt"]
+        "artifact_absent": [
+          "done.txt"
+        ]
       },
       "verifier_actions": [
         {
