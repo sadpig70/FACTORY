@@ -38,6 +38,7 @@ EXPECTED_PROBES = {
     "honest_terminal",
     "loop_survival_task",
     "cancel_while_running",
+    "graded_impl",
 }
 
 # Byte-exact artifact contents specified by the design table. The embedded

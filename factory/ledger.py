@@ -81,10 +81,13 @@ def make_entry(
         "soak_verdict": "not_started",
         "scores": {
             "per_probe": scores.get("per_probe", {}),
+            "graded": scores.get("graded", {}),
+            "timing": scores.get("timing", {}),
             "sample_size": scores.get("sample_size", 0),
         },
         "profile": {
-            "median_task_time_s": profile.get("median_task_time_s"),
+            "observed_median_time_s": profile.get("observed_median_time_s"),
+            "graded_mean": profile.get("graded_mean"),
             "cost_class": profile.get("cost_class"),
             "bias_fingerprint": None,
             "sample_size": profile.get("sample_size", 0),

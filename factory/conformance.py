@@ -66,6 +66,46 @@ def _validate_pass_criteria(probe_id: str, criteria: Any) -> None:
         )
 
 
+SCORED_KINDS = ("result_status", "artifact_matches")
+
+
+def _validate_scored(probe_id: str, scored: Any) -> None:
+    """Optional graded-correctness block: weighted sub-criteria on the immutable
+    result. artifact_absent is forbidden (it judges live workspace, order-
+    dependent); only result-object kinds are allowed."""
+    _require(isinstance(scored, dict), f"{probe_id}: scored must be an object")
+    criteria = scored.get("criteria")
+    _require(isinstance(criteria, list) and criteria, f"{probe_id}: scored.criteria must be a non-empty array")
+    for sub in criteria:
+        _require(isinstance(sub, dict), f"{probe_id}: scored criteria entries must be objects")
+        weight = sub.get("weight")
+        _require(
+            isinstance(weight, (int, float)) and not isinstance(weight, bool) and weight > 0,
+            f"{probe_id}: scored weight must be a positive number",
+        )
+        kind = sub.get("kind")
+        _require(
+            kind in SCORED_KINDS,
+            f"{probe_id}: scored kind must be one of {SCORED_KINDS} (artifact_absent is forbidden in scored)",
+        )
+        spec = sub.get("spec")
+        _require(isinstance(spec, dict) and spec, f"{probe_id}: scored entry needs a spec object")
+        if kind == "result_status":
+            _require(
+                isinstance(spec.get("result_status"), str) and spec["result_status"],
+                f"{probe_id}: scored result_status spec needs a non-empty string",
+            )
+        else:  # artifact_matches
+            _require(
+                isinstance(spec.get("path_basename"), str) and spec["path_basename"],
+                f"{probe_id}: scored artifact_matches spec needs a path_basename",
+            )
+            _require(
+                isinstance(spec.get("sha256"), str) and len(spec["sha256"]) == 64,
+                f"{probe_id}: scored artifact_matches spec needs a 64-char sha256",
+            )
+
+
 def _validate_actions(probe_id: str, actions: Any) -> None:
     _require(isinstance(actions, list), f"{probe_id}: verifier_actions must be an array")
     for action in actions:
@@ -119,6 +159,8 @@ def validate(manifest: Any) -> dict[str, Any]:
         )
         _validate_pass_criteria(probe_id, probe.get("pass_criteria"))
         _validate_actions(probe_id, probe.get("verifier_actions", []))
+        if "scored" in probe:
+            _validate_scored(probe_id, probe["scored"])
     return manifest
 
 

@@ -15,6 +15,7 @@ through injectable ``monotonic``/``sleep`` so tests never wait on the clock.
 from __future__ import annotations
 
 import json
+import statistics
 import subprocess
 import sys
 import time
@@ -161,16 +162,22 @@ def _collect_until_result(
         collected = runner(["collect", "--lwar-id", lwar_id, "--root", bus_root])
         quarantined = _find(collected.get("quarantined", []), task_id)
         if quarantined is not None:
-            return {"kind": "quarantined", "reason": quarantined.get("reason"), "file": quarantined.get("file")}
+            return {"kind": "quarantined", "reason": quarantined.get("reason"),
+                    "file": quarantined.get("file"), "observed_time_s": monotonic() - start}
         result_entry = _find_result(collected.get("results", []), task_id)
         if result_entry is not None:
+            # Verifier-side receive tick: both endpoints on ONE clock (this poll
+            # loop's monotonic), so no cross-host skew. Diagnostic only — it is
+            # quantized by poll_interval and floored by verifier_actions, not a
+            # model-quality ranking.
             return {
                 "kind": "result",
                 "result": result_entry["result"],
                 "result_file": result_entry.get("result_file"),
+                "observed_time_s": monotonic() - start,
             }
         if monotonic() - start >= poll_timeout_s:
-            return {"kind": "timeout"}
+            return {"kind": "timeout", "observed_time_s": None}
         sleep(poll_interval_s)
 
 
@@ -215,6 +222,8 @@ def verify_pairing(
     probes_report: dict[str, Any] = {}
     copied_results: list[str] = []
     content_hashes: dict[str, str] = {}
+    graded: dict[str, float] = {}
+    timing: dict[str, dict[str, Any]] = {}
     all_passed = True
 
     for probe in manifest["probes"]:
@@ -241,11 +250,26 @@ def verify_pairing(
             sleep=sleep,
         )
 
+        # Diagnostic timing: verifier-side, capped at the probe budget so a
+        # near-timeout submission is visibly flagged rather than silently
+        # inflating the median (never a ranking signal).
+        observed = outcome.get("observed_time_s")
+        budget = probe.get("timeout_s")
+        capped = observed is not None and budget is not None and observed >= budget
+        timing[probe_id] = {
+            "observed_time_s": (budget if capped else observed),
+            "capped": bool(capped),
+        }
+
         if outcome["kind"] == "result":
             verdict = judge_module.judge_result(
                 probe["pass_criteria"], outcome["result"], workspace, publish_time
             )
             passed = verdict["passed"]
+            if "scored" in probe:
+                graded_result = judge_module.judge_scored(probe["scored"], outcome["result"])
+                if graded_result["score"] is not None:
+                    graded[probe_id] = graded_result["score"]
             probe_copied, probe_hashes = _copy_evidence(
                 factory_root, pairing, probe_id, outcome.get("result_file")
             )
@@ -281,14 +305,29 @@ def verify_pairing(
 
     probe_verdict = "verified" if (all_passed and manifest["probes"]) else "failed"
     per_probe_scores = {pid: report["passed"] for pid, report in probes_report.items()}
+    observed_values = [
+        t["observed_time_s"] for t in timing.values() if t["observed_time_s"] is not None
+    ]
+    observed_median = statistics.median(observed_values) if observed_values else None
+    graded_mean = (sum(graded.values()) / len(graded)) if graded else None
     entry = ledger_module.make_entry(
         harness=harness,
         model=model,
         runtime=runtime,
         runtime_conformance=runtime_conformance,
         probe_verdict=probe_verdict,
-        scores={"per_probe": per_probe_scores, "sample_size": len(probes_report)},
-        profile={"median_task_time_s": None, "cost_class": None, "sample_size": 0},
+        scores={
+            "per_probe": per_probe_scores,
+            "graded": graded,
+            "timing": timing,
+            "sample_size": len(probes_report),
+        },
+        profile={
+            "observed_median_time_s": observed_median,
+            "graded_mean": graded_mean,
+            "cost_class": None,
+            "sample_size": len(probes_report),
+        },
         evidence={"copied_results": copied_results, "content_hashes": content_hashes},
     )
     entry_path = ledger_module.write_entry(factory_root, entry)
